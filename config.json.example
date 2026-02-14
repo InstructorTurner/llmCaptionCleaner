@@ -1,0 +1,5 @@
+{
+    "prompt_file": "captionprompt.md",
+    "model_name": "llama3.1",
+    "chunk_size": 5
+}

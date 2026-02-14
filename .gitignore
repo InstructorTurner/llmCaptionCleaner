@@ -1,0 +1,9 @@
+config.json
+transcripts/
+raw/
+processed/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
