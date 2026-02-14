@@ -11,40 +11,64 @@ def load_system_prompt(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
+def process_single_chunk(chunk_objects, system_prompt, model_name, info_str):
+    if not chunk_objects:
+        return []
+
+    raw_chunk_text = srt.compose(chunk_objects)
+    print(f"{info_str}...")
+
+    response = ollama.generate(
+        model=model_name,
+        system=system_prompt,
+        prompt=f"Fix the following SRT chunk:\n\n{raw_chunk_text}",
+        options={"temperature": 0}
+    )
+
+    try:
+        return list(srt.parse(response['response']))
+    except Exception as e:
+        print(f"Error parsing response: {e}")
+        return chunk_objects
+
+def clean_pass(subs, system_prompt, model_name, chunk_size, offset=0, pass_name="Pass 1"):
+    processed_subs = []
+    n = len(subs)
+
+    # Determine start index based on offset
+    current_idx = 0
+    if offset > 0:
+        # Process the initial offset chunk
+        end_idx = min(offset, n)
+        chunk_objects = subs[0:end_idx]
+        processed_subs.extend(process_single_chunk(chunk_objects, system_prompt, model_name, f"[{pass_name}] Processing blocks 1 to {end_idx}"))
+        current_idx = end_idx
+
+    # Iterate through the list of subtitle objects in chunks
+    for i in range(current_idx, n, chunk_size):
+        chunk_objects = subs[i : i + chunk_size]
+        info_str = f"[{pass_name}] Processing blocks {i+1} to {min(i+chunk_size, n)}"
+        processed_subs.extend(process_single_chunk(chunk_objects, system_prompt, model_name, info_str))
+
+    return processed_subs
+
 def process_srt(input_path, output_path, system_prompt, model_name, chunk_size):
     with open(input_path, "r", encoding="utf-8") as f:
         # srt.parse() handles the logic of keeping timestamps with their text
         subs = list(srt.parse(f.read()))
 
-    processed_subs = []
-    
-    # Iterate through the list of subtitle objects in chunks
-    for i in range(0, len(subs), chunk_size):
-        chunk_objects = subs[i : i + chunk_size]
-        
-        # srt.compose() re-assembles the objects into a valid SRT string for the LLM
-        raw_chunk_text = srt.compose(chunk_objects)
-        
-        print(f"Processing subtitle blocks {i+1} to {min(i+chunk_size, len(subs))}...")
-        
-        response = ollama.generate(
-            model=model_name,
-            system=system_prompt,
-            prompt=f"Fix the following SRT chunk:\n\n{raw_chunk_text}",
-            options={"temperature": 0}
-        )
-        
-        try:
-            # Parse the LLM response back into objects
-            cleaned_chunk = list(srt.parse(response['response']))
-            processed_subs.extend(cleaned_chunk)
-        except Exception as e:
-            print(f"Error parsing response for chunk starting at {i+1}: {e}")
-            # If the LLM garbles the format, we keep the original to avoid data loss
-            processed_subs.extend(chunk_objects)
+    # Pass 1: Standard chunking
+    print(f"--- Starting Pass 1 ({len(subs)} subs) ---")
+    subs = clean_pass(subs, system_prompt, model_name, chunk_size, offset=0, pass_name="Pass 1")
+
+    # Pass 2: Offset chunking (Review)
+    print(f"\n--- Starting Pass 2 (Review) ---")
+    # Offset by half the chunk size to bridge boundaries
+    offset = chunk_size // 2
+    subs = clean_pass(subs, system_prompt, model_name, chunk_size, offset=offset, pass_name="Pass 2")
 
     # Final re-assembly and re-indexing (fixes 1, 2, 3 sequence)
-    final_output = srt.compose(processed_subs, reindex=True)
+    final_output = srt.compose(subs, reindex=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(final_output)
     print(f"\nSuccess! Processed {len(subs)} captions into {output_path}")
