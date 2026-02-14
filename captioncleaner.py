@@ -11,30 +11,71 @@ def load_system_prompt(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
-def process_single_chunk(chunk_objects, system_prompt, model_name, context_size, info_str):
+def process_single_chunk(chunk_objects, system_prompt, model_name, context_size, think, info_str):
     if not chunk_objects:
         return []
 
     raw_chunk_text = srt.compose(chunk_objects)
     print(f"{info_str}...")
 
-    response = ollama.generate(
-        model=model_name,
-        system=system_prompt,
-        prompt=f"Fix the following SRT chunk:\n\n{raw_chunk_text}",
-        options={
-            "temperature": 0,
-            "num_ctx": context_size
-        }
-    )
+    response_text = ""
+    if think:
+        # Stream response to show "thinking"
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': f"Fix the following SRT chunk:\n\n{raw_chunk_text}"}
+        ]
+
+        stream = ollama.chat(
+            model=model_name,
+            messages=messages,
+            options={
+                "temperature": 0,
+                "num_ctx": context_size
+            },
+            stream=True,
+            think=True
+        )
+        
+        in_thinking = False
+        
+        for chunk in stream:
+            if chunk.message.thinking and not in_thinking:
+                in_thinking = True
+                print('Thinking:\n', end='')
+
+            if chunk.message.thinking:
+                print(chunk.message.thinking, end='', flush=True)
+            elif chunk.message.content:
+                if in_thinking:
+                    print('\n\nAnswer:\n', end='')
+                    in_thinking = False
+                
+                content = chunk.message.content
+                response_text += content
+                print(content, end='', flush=True)
+        print("\n--------------------")
+    else:
+        response = ollama.generate(
+            model=model_name,
+            system=system_prompt,
+            prompt=f"Fix the following SRT chunk:\n\n{raw_chunk_text}",
+            options={
+                "temperature": 0,
+                "num_ctx": context_size
+            },
+            think=False
+        )
+        response_text = response.get('response', '')
 
     try:
-        return list(srt.parse(response['response']))
+        return list(srt.parse(response_text))
     except Exception as e:
-        print(f"Error parsing response: {e}")
+        print(f"\nError parsing response: {e}")
+        print(f"--- Full (failed) response text ---\n{response_text}\n---------------------------------")
         return chunk_objects
 
-def clean_pass(subs, system_prompt, model_name, chunk_size, context_size, offset=0, pass_name="Pass 1"):
+def clean_pass(subs, system_prompt, model_name, chunk_size, context_size, think, offset=0, pass_name="Pass 1"):
     processed_subs = []
     n = len(subs)
 
@@ -44,31 +85,31 @@ def clean_pass(subs, system_prompt, model_name, chunk_size, context_size, offset
         # Process the initial offset chunk
         end_idx = min(offset, n)
         chunk_objects = subs[0:end_idx]
-        processed_subs.extend(process_single_chunk(chunk_objects, system_prompt, model_name, context_size, f"[{pass_name}] Processing blocks 1 to {end_idx}"))
+        processed_subs.extend(process_single_chunk(chunk_objects, system_prompt, model_name, context_size, think, f"[{pass_name}] Processing blocks 1 to {end_idx}"))
         current_idx = end_idx
 
     # Iterate through the list of subtitle objects in chunks
     for i in range(current_idx, n, chunk_size):
         chunk_objects = subs[i : i + chunk_size]
         info_str = f"[{pass_name}] Processing blocks {i+1} to {min(i+chunk_size, n)}"
-        processed_subs.extend(process_single_chunk(chunk_objects, system_prompt, model_name, context_size, info_str))
+        processed_subs.extend(process_single_chunk(chunk_objects, system_prompt, model_name, context_size, think, info_str))
 
     return processed_subs
 
-def process_srt(input_path, output_path, system_prompt, model_name, chunk_size, context_size):
+def process_srt(input_path, output_path, system_prompt, model_name, chunk_size, context_size, think):
     with open(input_path, "r", encoding="utf-8") as f:
         # srt.parse() handles the logic of keeping timestamps with their text
         subs = list(srt.parse(f.read()))
 
     # Pass 1: Standard chunking
     print(f"--- Starting Pass 1 ({len(subs)} subs) ---")
-    subs = clean_pass(subs, system_prompt, model_name, chunk_size, context_size, offset=0, pass_name="Pass 1")
+    subs = clean_pass(subs, system_prompt, model_name, chunk_size, context_size, think, offset=0, pass_name="Pass 1")
 
     # Pass 2: Offset chunking (Review)
     print(f"\n--- Starting Pass 2 (Review) ---")
     # Offset by half the chunk size to bridge boundaries
     offset = chunk_size // 2
-    subs = clean_pass(subs, system_prompt, model_name, chunk_size, context_size, offset=offset, pass_name="Pass 2")
+    subs = clean_pass(subs, system_prompt, model_name, chunk_size, context_size, think, offset=offset, pass_name="Pass 2")
 
     # Final re-assembly and re-indexing (fixes 1, 2, 3 sequence)
     final_output = srt.compose(subs, reindex=True)
@@ -104,7 +145,8 @@ if __name__ == "__main__":
             sys_prompt, 
             config.get("model_name", "llama3.1"), 
             config.get("chunk_size", 5),
-            config.get("context_size", 4096)
+            config.get("context_size", 4096),
+            config.get("think", False)
         )
     except Exception as err:
         print(f"Error: {err}")

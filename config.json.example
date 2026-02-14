@@ -2,5 +2,6 @@
     "prompt_file": "captionprompt.md",
     "model_name": "llama3.1",
     "chunk_size": 5,
-    "context_size": 8192
+    "context_size": 8192,
+    "think": false
 }
