@@ -2,6 +2,11 @@
 
 This tool automates the cleaning and formatting of auto-generated SRT subtitles to meet Section 508 accessibility guidelines. It uses local Large Language Models (LLMs) via [Ollama](https://ollama.com/) to correct grammar, adjust timing, and ensure formatting constraints.  The code for this project is mostly generated via Gemini.
 
+## Important Notes
+
+*   **Local First:** This project was built with local models in mind.
+*   **Manual Review:** All generated captions should be reviewed manually.
+
 ## Features
 
 *   **508 Compliance:** Formats captions to a maximum of 32 characters per line and 2 lines per caption.
