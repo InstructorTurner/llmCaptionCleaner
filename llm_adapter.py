@@ -13,6 +13,9 @@ class OllamaProvider(LLMProvider):
         model_name = self.config.get("model_name", "llama3.1")
         context_size = self.config.get("context_size", 4096)
         think = self.config.get("think", False)
+        host = self.config.get("api_url")
+
+        client = ollama.Client(host=host)
 
         messages = [
             {'role': 'system', 'content': system_prompt},
@@ -20,7 +23,7 @@ class OllamaProvider(LLMProvider):
         ]
 
         if think:
-            stream = ollama.chat(
+            stream = client.chat(
                 model=model_name,
                 messages=messages,
                 options={
@@ -53,7 +56,7 @@ class OllamaProvider(LLMProvider):
             print("\n--------------------")
             return response_text
         else:
-            response = ollama.chat(
+            response = client.chat(
                 model=model_name,
                 messages=messages,
                 options={
