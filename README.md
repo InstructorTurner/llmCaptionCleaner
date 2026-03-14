@@ -26,6 +26,10 @@ This tool automates the cleaning and formatting of auto-generated SRT subtitles 
     # OR
     ollama pull qwen2.5
     ```
+4.  **YouTube Tools** (Optional, for downloading):
+    ```bash
+    pip install google-api-python-client youtube-transcript-api
+    ```
 
 ## Installation
 
