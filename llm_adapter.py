@@ -64,26 +64,6 @@ class OllamaProvider(LLMProvider):
             )
             return response['message']['content']
 
-class GeminiProvider(LLMProvider):
-    def __init__(self, config):
-        super().__init__(config)
-        try:
-            import google.generativeai as genai
-            self.genai = genai
-        except ImportError:
-            raise ImportError("The 'google-generativeai' package is required for Gemini provider.")
-
-        api_key = self.config.get("api_key") or os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("Gemini API key not found. Set 'api_key' in config or GOOGLE_API_KEY env var.")
-        
-        self.genai.configure(api_key=api_key)
-
-    def query(self, prompt, system_prompt):
-        model_name = self.config.get("model_name", "gemini-1.5-flash")
-        model = self.genai.GenerativeModel(model_name=model_name, system_instruction=system_prompt)
-        response = model.generate_content(prompt, generation_config=self.genai.types.GenerationConfig(temperature=0))
-        return response.text
 
 def get_provider(config):
     provider_name = config.get("provider", "ollama").lower()
